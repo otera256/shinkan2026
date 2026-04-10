@@ -1,0 +1,25 @@
+:root {
+  --color-primary: #ce6636;
+  --color-primary-light: #dc997a;
+  --color-secondary: #0e0b31;
+  --color-def-bg: #e3f2fd;
+  --color-thm-bg: #fff3e0;
+  --color-note-bg: #f1f8e9;
+  --color-math-bg: #f0f0f0;
+}
+
+/* 使用例：このように変数として呼び出します */
+h1, h2 {
+  color: var(--color-secondary);
+}
+.highlight-text {
+  color: var(--color-primary);
+}
+.theorem-box {
+  background-color: var(--color-thm-bg);
+  border-left: 4px solid var(--color-primary-light);
+  padding: 10px;
+}
+.math-block {
+  background-color: var(--color-math-bg);
+}

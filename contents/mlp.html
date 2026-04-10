@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLP シミュレーター</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        body {
+            background-color: var(--color-math-bg);
+            color: var(--color-secondary);
+            font-family: sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container-box {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header-title {
+            color: var(--color-primary);
+            border-bottom: 2px solid var(--color-primary-light);
+            padding-bottom: 8px;
+            margin-bottom: 20px;
+        }
+
+        #network-canvas {
+            width: 100%;
+            height: 400px;
+            background-color: var(--color-note-bg);
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            cursor: crosshair;
+        }
+
+        #heatmap-canvas {
+            width: 100%;
+            height: 400px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+        }
+
+        .control-panel {
+            background-color: var(--color-thm-bg);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        input[type="range"] {
+            accent-color: var(--color-primary);
+        }
+
+        select {
+            border: 1px solid var(--color-primary-light);
+            border-radius: 4px;
+            padding: 4px 8px;
+            background-color: white;
+            color: var(--color-secondary);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-box">
+    <h1 class="header-title text-2xl font-bold">2入力 MLP インタラクティブ・シミュレーター</h1>
+    <p class="mb-6 text-sm">
+        ネットワークの<strong>線（重み）</strong>や<strong>丸（バイアス）</strong>の上にマウスを乗せて<strong>ホイールを回転</strong>させると値を変更できます。<br>
+        右側のヒートマップは、$x_1$ と $x_2$ （-2.0 から 2.0）を入力したときの最終出力を可視化しています。
+    </p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- 左側：ネットワーク図 -->
+        <div class="flex flex-col">
+            <h2 class="text-lg font-semibold mb-2">ネットワーク構造</h2>
+            <canvas id="network-canvas" width="600" height="400"></canvas>
+            
+            <div class="control-panel grid grid-cols-2 gap-4">
+                <div class="col-span-2 sm:col-span-1">
+                    <label class="block text-sm font-medium mb-1">隠れ層のノード数</label>
+                    <div class="flex items-center">
+                        <button id="btn-dec-nodes" class="px-3 py-1 bg-white border border-[var(--color-primary-light)] rounded-l hover:bg-gray-50">-</button>
+                        <div id="hidden-count-display" class="px-4 py-1 border-t border-b border-[var(--color-primary-light)] bg-white text-center w-12 font-bold text-[var(--color-primary)]">3</div>
+                        <button id="btn-inc-nodes" class="px-3 py-1 bg-white border border-[var(--color-primary-light)] rounded-r hover:bg-gray-50">+</button>
+                    </div>
+                </div>
+                <div class="col-span-2 sm:col-span-1 flex items-end">
+                    <p class="text-xs text-gray-500 pb-1">※増減させるとネットワークが再構築されます</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium mb-1">隠れ層の活性化関数</label>
+                    <select id="act-hidden" class="w-full">
+                        <option value="sigmoid" selected>Sigmoid</option>
+                        <option value="relu">ReLU</option>
+                        <option value="step">Step (Threshold)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">出力層の活性化関数</label>
+                    <select id="act-output" class="w-full">
+                        <option value="sigmoid" selected>Sigmoid</option>
+                        <option value="relu">ReLU</option>
+                        <option value="step">Step (Threshold)</option>
+                        <option value="linear">Linear (None)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右側：ヒートマップ -->
+        <div class="flex flex-col">
+            <h2 class="text-lg font-semibold mb-2">出力空間の可視化 (ヒートマップ)</h2>
+            <div class="relative">
+                <canvas id="heatmap-canvas" width="400" height="400"></canvas>
+                <!-- 軸ラベル -->
+                <div class="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-full pt-1 text-sm">x1</div>
+                <div class="absolute top-1/2 left-0 transform -translate-x-full -translate-y-1/2 pr-1 text-sm">x2</div>
+                <div class="absolute top-0 left-0 text-xs p-1">-2.0</div>
+                <div class="absolute bottom-0 right-0 text-xs p-1">2.0</div>
+            </div>
+            
+            <!-- データセットとLoss -->
+            <div class="mt-6 grid grid-cols-2 gap-4 items-end">
+                <div>
+                    <label class="block text-sm font-medium mb-1">データセット</label>
+                    <select id="dataset-select" class="w-full">
+                        <option value="none" selected>なし</option>
+                        <option value="linear">線形 (Linear)</option>
+                        <option value="circle">非線形 (Circle)</option>
+                        <option value="xor">非線形 (XOR)</option>
+                    </select>
+                </div>
+                <div id="loss-display" class="hidden text-right pb-1">
+                    <span class="text-sm font-bold text-[var(--color-secondary)]">Loss (MSE):</span>
+                    <span id="loss-value" class="text-xl font-mono font-bold text-[var(--color-primary)]">0.0000</span>
+                </div>
+            </div>
+
+            <div class="mt-6">
+                <h3 class="font-semibold mb-2">現在のパラメータ (微調整用)</h3>
+                <div id="param-sliders" class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs overflow-y-auto h-32 border p-2 rounded">
+                    <!-- JSで動的にスライダーを生成します -->
+                </div>
+                <button id="reset-btn" class="mt-4 px-4 py-2 bg-[var(--color-primary)] text-white rounded hover:bg-[var(--color-primary-light)] transition">
+                    初期値にリセット
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 初期状態の定義 (Notebookの値を再現) ---
+    const notebookParams = {
+        w111: -1.6, w112: 1.0, b11: -0.8,
+        w121: -0.9, w122: -1.6, b12: 0.5,
+        w131: -1.3, w132: 0.2, b13: -1.8,
+        w21: 1.6, w22: -1.7, w23: 2.0, b2: 0.0
+    };
+
+    let params = { ...notebookParams };
+    let hiddenCount = 3;
+
+    // --- 活性化関数 ---
+    const activations = {
+        sigmoid: (x) => 1 / (1 + Math.exp(-x)),
+        relu: (x) => Math.max(0, x),
+        step: (x) => x >= 0 ? 1 : 0,
+        linear: (x) => x
+    };
+
+    // --- UI要素の取得とキャンバスサイズの定義（エラー修正箇所） ---
+    const networkCanvas = document.getElementById('network-canvas');
+    const ctxNet = networkCanvas.getContext('2d');
+    const cw = networkCanvas.width;  // 全体から参照できるようにグローバルに移動
+    const ch = networkCanvas.height;
+
+    const heatmapCanvas = document.getElementById('heatmap-canvas');
+    const ctxHeat = heatmapCanvas.getContext('2d');
+    const paramSlidersDiv = document.getElementById('param-sliders');
+    const actHiddenSelect = document.getElementById('act-hidden');
+    const actOutputSelect = document.getElementById('act-output');
+    const resetBtn = document.getElementById('reset-btn');
+    const datasetSelect = document.getElementById('dataset-select');
+    const lossDisplay = document.getElementById('loss-display');
+    const lossValue = document.getElementById('loss-value');
+    
+    const btnDec = document.getElementById('btn-dec-nodes');
+    const btnInc = document.getElementById('btn-inc-nodes');
+    const hiddenCountDisplay = document.getElementById('hidden-count-display');
+
+    // --- ネットワーク構造の動的生成 ---
+    let nodes = { input: [], hidden: [], output: [] };
+    let edges = [];
+    let hoveredTarget = null; // { type: 'edge', obj: ... } または { type: 'node', obj: ... }
+
+    function buildNetworkStructure() {
+        nodes.input = [
+            { id: 'x1', x: cw * 0.15, y: ch * 0.3, label: 'x1' },
+            { id: 'x2', x: cw * 0.15, y: ch * 0.7, label: 'x2' }
+        ];
+        
+        nodes.hidden = [];
+        const hSpacing = ch / (hiddenCount + 1);
+        for (let i = 1; i <= hiddenCount; i++) {
+            nodes.hidden.push({
+                id: `h${i}`,
+                x: cw * 0.5,
+                y: hSpacing * i,
+                label: `h${i}`,
+                biasParam: `b1${i}`
+            });
+            // パラメータが存在しなければ初期化
+            if (params[`w1${i}1`] === undefined) params[`w1${i}1`] = (Math.random() * 2 - 1);
+            if (params[`w1${i}2`] === undefined) params[`w1${i}2`] = (Math.random() * 2 - 1);
+            if (params[`b1${i}`] === undefined) params[`b1${i}`] = (Math.random() * 2 - 1);
+            if (params[`w2${i}`] === undefined) params[`w2${i}`] = (Math.random() * 2 - 1);
+        }
+        
+        nodes.output = [
+            { id: 'y', x: cw * 0.85, y: ch * 0.5, label: 'y', biasParam: 'b2' }
+        ];
+
+        edges = [];
+        for (let i = 1; i <= hiddenCount; i++) {
+            edges.push({ from: nodes.input[0], to: nodes.hidden[i-1], param: `w1${i}1` });
+            edges.push({ from: nodes.input[1], to: nodes.hidden[i-1], param: `w1${i}2` });
+            edges.push({ from: nodes.hidden[i-1], to: nodes.output[0], param: `w2${i}` });
+        }
+        
+        createSliders();
+        hoveredTarget = null;
+    }
+
+    // --- 順伝播の計算関数 ---
+    function forwardPass(x1, x2) {
+        const actH = activations[actHiddenSelect.value];
+        const actO = activations[actOutputSelect.value];
+
+        const h_outs = [];
+        // 隠れ層
+        for (let i = 1; i <= hiddenCount; i++) {
+            const z = x1 * params[`w1${i}1`] + x2 * params[`w1${i}2`] + params[`b1${i}`];
+            h_outs.push(actH(z));
+        }
+
+        // 出力層
+        let z2 = params.b2;
+        for (let i = 1; i <= hiddenCount; i++) {
+            z2 += h_outs[i-1] * params[`w2${i}`];
+        }
+        
+        return actO(z2);
+    }
+
+    // --- ヒートマップの描画 ---
+    function drawHeatmap() {
+        const width = heatmapCanvas.width;
+        const height = heatmapCanvas.height;
+        const imgData = ctxHeat.createImageData(width, height);
+        
+        const minVal = -2.0;
+        const maxVal = 2.0;
+        
+        for (let py = 0; py < height; py++) {
+            for (let px = 0; px < width; px++) {
+                const x1 = minVal + (px / width) * (maxVal - minVal);
+                const x2 = maxVal - (py / height) * (maxVal - minVal);
+                
+                let y_out = forwardPass(x1, x2);
+                y_out = Math.max(0, Math.min(1, y_out)); 
+                
+                let r, g, b;
+                if (y_out < 0.5) {
+                    const t = y_out * 2.0;
+                    r = Math.floor(30 + t * (255 - 30));
+                    g = Math.floor(58 + t * (255 - 58));
+                    b = Math.floor(138 + t * (255 - 138));
+                } else {
+                    const t = (y_out - 0.5) * 2.0;
+                    r = Math.floor(255 + t * (206 - 255));
+                    g = Math.floor(255 + t * (102 - 255));
+                    b = Math.floor(255 + t * (54 - 255));
+                }
+                
+                const idx = (py * width + px) * 4;
+                imgData.data[idx]     = r;
+                imgData.data[idx + 1] = g;
+                imgData.data[idx + 2] = b;
+                imgData.data[idx + 3] = 255;
+            }
+        }
+        ctxHeat.putImageData(imgData, 0, 0);
+    }
+
+    // --- データセットの生成と描画 ---
+    let currentDataset = [];
+
+    function generateDataset(type) {
+        const data = [];
+        const numPoints = 150;
+        for (let i = 0; i < numPoints; i++) {
+            let basex1 = (Math.random() * 3.0) - 1.5;
+            let basex2 = (Math.random() * 3.0) - 1.5;
+            let label = 0;
+
+            if (type === 'linear') {
+                label = (basex1 + basex2 > 0) ? 1 : 0;
+            } else if (type === 'circle') {
+                label = (basex1 * basex1 + basex2 * basex2 < 0.8) ? 1 : 0;
+            } else if (type === 'xor') {
+                label = (basex1 * basex2 > 0) ? 1 : 0;
+            }
+
+            const x1 = basex1 + (Math.random() - 0.5) * 0.4;
+            const x2 = basex2 + (Math.random() - 0.5) * 0.4;
+            data.push({ x1, x2, label });
+        }
+        return data;
+    }
+
+    function drawDataset() {
+        if (currentDataset.length === 0) return;
+        
+        const width = heatmapCanvas.width;
+        const height = heatmapCanvas.height;
+        const minVal = -2.0;
+        const maxVal = 2.0;
+
+        currentDataset.forEach(pt => {
+            const px = (pt.x1 - minVal) / (maxVal - minVal) * width;
+            const py = (maxVal - pt.x2) / (maxVal - minVal) * height;
+
+            if (px < 0 || px > width || py < 0 || py > height) return;
+
+            ctxHeat.beginPath();
+            ctxHeat.arc(px, py, 4, 0, Math.PI * 2);
+            ctxHeat.fillStyle = pt.label === 1 ? '#ce6636' : '#1e3a8a';
+            ctxHeat.fill();
+            ctxHeat.lineWidth = 1.5;
+            ctxHeat.strokeStyle = '#ffffff';
+            ctxHeat.stroke();
+        });
+    }
+
+    function updateLoss() {
+        if (currentDataset.length === 0) {
+            lossDisplay.classList.add('hidden');
+            return;
+        }
+
+        lossDisplay.classList.remove('hidden');
+        let totalLoss = 0;
+        currentDataset.forEach(pt => {
+            const y_pred = forwardPass(pt.x1, pt.x2);
+            totalLoss += Math.pow(y_pred - pt.label, 2);
+        });
+        const mse = totalLoss / currentDataset.length;
+        lossValue.innerText = mse.toFixed(4);
+    }
+
+    // --- ネットワーク図の描画 ---
+    function drawNetwork() {
+        ctxNet.clearRect(0, 0, cw, ch);
+
+        // エッジの描画
+        edges.forEach(edge => {
+            const weight = params[edge.param];
+            const lineWidth = Math.max(1, Math.abs(weight) * 3);
+            const color = weight >= 0 ? '#1e3a8a' : '#991b1b';
+
+            ctxNet.beginPath();
+            ctxNet.moveTo(edge.from.x, edge.from.y);
+            ctxNet.lineTo(edge.to.x, edge.to.y);
+            ctxNet.lineWidth = lineWidth;
+            
+            const isHovered = hoveredTarget && hoveredTarget.type === 'edge' && hoveredTarget.obj === edge;
+            if (isHovered) {
+                ctxNet.strokeStyle = '#ce6636';
+                ctxNet.shadowColor = '#dc997a';
+                ctxNet.shadowBlur = 10;
+            } else {
+                ctxNet.strokeStyle = color;
+                ctxNet.shadowBlur = 0;
+            }
+            ctxNet.stroke();
+            
+            // 重み値の表示
+            const midX = (edge.from.x + edge.to.x) / 2;
+            const midY = (edge.from.y + edge.to.y) / 2;
+            ctxNet.fillStyle = 'rgba(255,255,255,0.8)';
+            ctxNet.fillRect(midX - 15, midY - 10, 30, 20);
+            
+            ctxNet.fillStyle = '#333';
+            ctxNet.font = '12px Arial';
+            ctxNet.textAlign = 'center';
+            ctxNet.textBaseline = 'middle';
+            ctxNet.fillText(weight.toFixed(1), midX, midY);
+        });
+
+        // ノードの描画
+        const drawNode = (node) => {
+            const isBiasNode = !!node.biasParam;
+            
+            ctxNet.beginPath();
+            ctxNet.arc(node.x, node.y, 20, 0, Math.PI * 2);
+            ctxNet.fillStyle = isBiasNode ? '#f1f8e9' : '#fff';
+            ctxNet.fill();
+            ctxNet.lineWidth = 2;
+            
+            const isHovered = hoveredTarget && hoveredTarget.type === 'node' && hoveredTarget.obj === node;
+            if (isHovered) {
+                ctxNet.strokeStyle = '#ce6636';
+                ctxNet.shadowColor = '#dc997a';
+                ctxNet.shadowBlur = 10;
+            } else {
+                ctxNet.strokeStyle = '#0e0b31';
+                ctxNet.shadowBlur = 0;
+            }
+            
+            ctxNet.stroke();
+            ctxNet.shadowBlur = 0;
+            
+            ctxNet.fillStyle = '#0e0b31';
+            ctxNet.font = '14px Arial';
+            ctxNet.textAlign = 'center';
+            ctxNet.textBaseline = 'middle';
+            ctxNet.fillText(node.label, node.x, node.y);
+
+            // バイアス値の表示
+            if (isBiasNode) {
+                const bVal = params[node.biasParam];
+                ctxNet.fillStyle = isHovered ? '#ce6636' : '#555';
+                ctxNet.font = 'bold 12px Arial';
+                ctxNet.fillText(`b: ${bVal.toFixed(1)}`, node.x, node.y - 28);
+            }
+        };
+
+        nodes.input.forEach(drawNode);
+        nodes.hidden.forEach(drawNode);
+        nodes.output.forEach(drawNode);
+    }
+
+    // --- 全体更新 ---
+    function updateAll() {
+        drawNetwork();
+        drawHeatmap();
+        drawDataset();
+        updateSliderValues();
+        updateLoss();
+    }
+
+    // --- スライダー生成 ---
+    function createSliders() {
+        paramSlidersDiv.innerHTML = '';
+        const sortedKeys = Object.keys(params).sort();
+        sortedKeys.forEach(key => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex items-center justify-between mb-1';
+            
+            const label = document.createElement('label');
+            label.className = 'w-1/3 font-mono';
+            label.innerText = key;
+            
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = '-3.0';
+            slider.max = '3.0';
+            slider.step = '0.1';
+            slider.value = params[key];
+            slider.className = 'w-1/2 mx-2';
+            slider.id = `slider-${key}`;
+            
+            const valDisplay = document.createElement('span');
+            valDisplay.className = 'w-1/6 text-right font-mono';
+            valDisplay.id = `val-${key}`;
+            valDisplay.innerText = Number(params[key]).toFixed(1);
+
+            slider.addEventListener('input', (e) => {
+                params[key] = parseFloat(e.target.value);
+                updateAll();
+            });
+
+            wrapper.appendChild(label);
+            wrapper.appendChild(slider);
+            wrapper.appendChild(valDisplay);
+            paramSlidersDiv.appendChild(wrapper);
+        });
+    }
+
+    function updateSliderValues() {
+        Object.keys(params).forEach(key => {
+            const slider = document.getElementById(`slider-${key}`);
+            const valDisplay = document.getElementById(`val-${key}`);
+            if (slider && valDisplay) {
+                slider.value = params[key];
+                valDisplay.innerText = params[key].toFixed(1);
+            }
+        });
+    }
+
+    // --- インタラクション ---
+    function getDistanceToSegment(px, py, x1, y1, x2, y2) {
+        const l2 = (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2);
+        if (l2 == 0) return Math.hypot(px - x1, py - y1);
+        let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+        t = Math.max(0, Math.min(1, t));
+        return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+    }
+
+    const isSameTarget = (t1, t2) => {
+        if (!t1 && !t2) return true;
+        if (!t1 || !t2) return false;
+        return t1 && t2 ? t1.type === t2.type && t1.obj === t2.obj : false;
+    };
+
+    networkCanvas.addEventListener('mousemove', (e) => {
+        const rect = networkCanvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        let closestTarget = null;
+        
+        const allNodes = [...nodes.hidden, ...nodes.output];
+        for (const node of allNodes) {
+            if (!node.biasParam) continue;
+            const dist = Math.hypot(mouseX - node.x, mouseY - node.y);
+            if (dist < 22) {
+                closestTarget = { type: 'node', obj: node };
+                break;
+            }
+        }
+        
+        if (!closestTarget) {
+            let minDist = 15;
+            edges.forEach(edge => {
+                const dist = getDistanceToSegment(mouseX, mouseY, edge.from.x, edge.from.y, edge.to.x, edge.to.y);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestTarget = { type: 'edge', obj: edge };
+                }
+            });
+        }
+
+        if (!isSameTarget(hoveredTarget, closestTarget)) {
+            hoveredTarget = closestTarget;
+            drawNetwork();
+        }
+    });
+
+    networkCanvas.addEventListener('mouseleave', () => {
+        if (hoveredTarget) {
+            hoveredTarget = null;
+            drawNetwork();
+        }
+    });
+
+    networkCanvas.addEventListener('wheel', (e) => {
+        if (hoveredTarget) {
+            e.preventDefault(); 
+            const delta = e.deltaY < 0 ? 0.1 : -0.1;
+            let paramKey = null;
+            
+            if (hoveredTarget.type === 'edge') {
+                paramKey = hoveredTarget.obj.param;
+            } else if (hoveredTarget.type === 'node') {
+                paramKey = hoveredTarget.obj.biasParam;
+            }
+            
+            if (paramKey) {
+                let newValue = params[paramKey] + delta;
+                newValue = Math.max(-3.0, Math.min(3.0, newValue));
+                params[paramKey] = newValue;
+                updateAll();
+            }
+        }
+    }, { passive: false }); // スクロール防止のためにpassive:falseを追加
+
+    // --- ノード増減 ---
+    btnDec.addEventListener('click', () => {
+        if (hiddenCount > 1) {
+            delete params[`w1${hiddenCount}1`];
+            delete params[`w1${hiddenCount}2`];
+            delete params[`b1${hiddenCount}`];
+            delete params[`w2${hiddenCount}`];
+            
+            hiddenCount--;
+            hiddenCountDisplay.innerText = hiddenCount;
+            buildNetworkStructure();
+            updateAll();
+        }
+    });
+
+    btnInc.addEventListener('click', () => {
+        if (hiddenCount < 5) {
+            hiddenCount++;
+            hiddenCountDisplay.innerText = hiddenCount;
+            buildNetworkStructure();
+            updateAll();
+        }
+    });
+
+    // --- その他イベント ---
+    actHiddenSelect.addEventListener('change', updateAll);
+    actOutputSelect.addEventListener('change', updateAll);
+    
+    datasetSelect.addEventListener('change', (e) => {
+        const type = e.target.value;
+        if (type === 'none') {
+            currentDataset = [];
+        } else {
+            currentDataset = generateDataset(type);
+        }
+        updateAll();
+    });
+
+    resetBtn.addEventListener('click', () => {
+        params = { ...notebookParams };
+        hiddenCount = 3;
+        hiddenCountDisplay.innerText = hiddenCount;
+        actHiddenSelect.value = 'sigmoid';
+        actOutputSelect.value = 'sigmoid';
+        datasetSelect.value = 'none';
+        currentDataset = [];
+        buildNetworkStructure();
+        updateAll();
+    });
+
+    // --- 初期化実行 ---
+    buildNetworkStructure();
+    updateAll();
+
+</script>
+</body>
+</html>

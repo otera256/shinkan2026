@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026年 機械学習分野 新勧講座 - インタラクティブ教材</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="./style.css">
+    <style>
+        body {
+            background-color: var(--color-math-bg);
+            color: var(--color-secondary);
+            font-family: sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header-bg {
+            background-color: var(--color-secondary);
+            color: white;
+            border-bottom: 4px solid var(--color-primary);
+        }
+
+        .content-wrapper {
+            flex: 1;
+            padding: 40px 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* カードのスタイル */
+        .course-card {
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 1px solid #eaeaea;
+            border-left: 6px solid var(--color-primary);
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .course-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px rgba(0,0,0,0.1);
+            border-left-color: var(--color-primary-light);
+        }
+
+        .card-header {
+            background-color: var(--color-thm-bg);
+            padding: 15px 20px;
+            border-bottom: 1px solid #eaeaea;
+        }
+
+        .card-body {
+            padding: 20px;
+            flex: 1;
+        }
+        
+        .card-tag {
+            display: inline-block;
+            background-color: var(--color-secondary);
+            color: white;
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ヘッダー（スライドの表紙をイメージ） -->
+    <header class="header-bg py-3 px-6 text-center shadow-md">
+        <p class="text-sm md:text-base font-medium text-[var(--color-primary-light)] mb-2 tracking-widest">
+            Kyoto Microcomputer Club
+        </p>
+    </header>
+
+    <!-- メインコンテンツ（リンク集） -->
+    <main class="content-wrapper">
+        <div class="mb-8 border-b-2 border-[var(--color-primary-light)] pb-2">
+            <h3 class="text-2xl font-bold text-[var(--color-secondary)]">インタラクティブ教材</h3>
+            <p class="text-gray-600 mt-2">ブラウザ上で実際に触って動かせるシミュレーターとWeb推論アプリです。</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <!-- MLPシミュレーターへのリンク -->
+            <a href="./contents/mlp.html" class="course-card">
+                <div class="card-header">
+                    <span class="card-tag">基礎編 / 可視化</span>
+                    <h4 class="text-xl font-bold text-[var(--color-primary)]">2入力 MLP シミュレーター</h4>
+                </div>
+                <div class="card-body">
+                    <p class="text-sm text-gray-700 leading-relaxed">
+                        多層パーセプトロン（MLP）の仕組みを直感的に理解するためのシミュレーターです。<br><br>
+                        ネットワークの重みやバイアスをマウスホイールで直接操作し、決定境界（ヒートマップ）がどのように変化するかをリアルタイムに観察できます。
+                    </p>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 text-right text-sm text-[var(--color-primary)] font-bold group-hover:underline">
+                    シミュレーターを開く &rarr;
+                </div>
+            </a>
+
+            <!-- MNIST推論へのリンク -->
+            <a href="./contents/mnist.html" class="course-card">
+                <div class="card-header">
+                    <span class="card-tag">実践編 / Webデプロイ</span>
+                    <h4 class="text-xl font-bold text-[var(--color-primary)]">手書き数字認識 (MNIST) リアルタイム推論</h4>
+                </div>
+                <div class="card-body">
+                    <p class="text-sm text-gray-700 leading-relaxed">
+                        学習済みのPyTorch CNNモデルをONNX形式に変換し、ブラウザ上で推論を実行します。<br><br>
+                        キャンバスに自分の指やマウスで0〜9の数字を描き、AIがリアルタイムに確率を判定して数字を当てる様子を体験できます。
+                    </p>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 text-right text-sm text-[var(--color-primary)] font-bold group-hover:underline">
+                    Web推論アプリを開く &rarr;
+                </div>
+            </a>
+
+            <!-- 今後追加予定のコンテンツ（プレースホルダー） -->
+            <div class="course-card opacity-60 grayscale hover:grayscale-0 hover:opacity-100 transition duration-300" style="cursor: not-allowed;" title="準備中">
+                <div class="card-header">
+                    <span class="card-tag bg-gray-500">準備中</span>
+                    <h4 class="text-xl font-bold text-gray-600">最適化アルゴリズム (Optimizer)</h4>
+                </div>
+                <div class="card-body">
+                    <p class="text-sm text-gray-700 leading-relaxed">
+                        勾配降下法やAdamなど、モデルが効率的に学習するための最適化アルゴリズムの動きをアニメーションで比較・学習するコンテンツです。（今後追加予定）
+                    </p>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 text-right text-sm text-gray-500">
+                    Coming Soon
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- フッター -->
+    <footer class="bg-[var(--color-secondary)] text-center py-6 text-gray-400 text-sm mt-auto">
+        <p>49th furakuta | 2026-04-10</p>
+        <p class="mt-1">Kyoto Micro Computer Clob</p>
+    </footer>
+
+</body>
+</html>

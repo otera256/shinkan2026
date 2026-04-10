@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MNIST 手書き文字認識</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../style.css">
+    <!-- ONNX Runtime Web の読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <style>
+        body {
+            background-color: var(--color-math-bg);
+            color: var(--color-secondary);
+            font-family: sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container-box {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .header-title {
+            color: var(--color-primary);
+            border-bottom: 2px solid var(--color-primary-light);
+            padding-bottom: 8px;
+            margin-bottom: 20px;
+        }
+
+        /* 描画キャンバス（MNISTに合わせて背景を黒、線を白にする） */
+        #draw-canvas {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            cursor: crosshair;
+            touch-action: none; /* スマホでのスクロールを防止 */
+        }
+
+        /* 予測結果のバーグラフ用スタイル */
+        .bar-container {
+            width: 100%;
+            background-color: var(--color-math-bg);
+            border-radius: 4px;
+            overflow: hidden;
+            height: 24px;
+        }
+        .bar-fill {
+            height: 100%;
+            background-color: var(--color-primary);
+            width: 0%;
+            transition: width 0.1s ease-out;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-box">
+    <h1 class="header-title text-2xl font-bold">手書き数字認識 (MNIST) リアルタイム推論</h1>
+    <p class="mb-6 text-sm">
+        学習済みのCNNモデル（ONNX形式）をブラウザ上で実行しています。<br>
+        下の黒いキャンバスに、マウス（または指）で <strong>0〜9の数字</strong> を描いてみてください。
+    </p>
+
+    <div id="loading-message" class="text-center py-4 text-blue-600 font-bold mb-4 bg-blue-50 rounded">
+        AIモデル (mnist_cnn.onnx) を読み込み中...
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <!-- 左側：描画エリア -->
+        <div class="flex flex-col items-center">
+            <h2 class="text-lg font-semibold mb-2">ここに描く</h2>
+            <canvas id="draw-canvas" width="280" height="280"></canvas>
+            <button id="clear-btn" class="mt-4 px-6 py-2 bg-[var(--color-secondary)] text-white rounded hover:bg-gray-800 transition">
+                クリア
+            </button>
+        </div>
+
+        <!-- 右側：予測結果エリア -->
+        <div class="flex flex-col">
+            <h2 class="text-lg font-semibold mb-2">AIの予測確率</h2>
+            <div id="results-panel" class="flex-grow flex flex-col justify-between">
+                <!-- 0〜9の確率バーを動的に生成 -->
+            </div>
+            <div class="mt-4 text-center">
+                <span class="text-sm text-gray-500">最も高い確率の数字: </span>
+                <span id="predicted-digit" class="text-4xl font-bold text-[var(--color-primary)]">-</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- グローバル変数 ---
+    let session = null;
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const canvas = document.getElementById('draw-canvas');
+    const ctx = canvas.getContext('2d');
+    const clearBtn = document.getElementById('clear-btn');
+    const resultsPanel = document.getElementById('results-panel');
+    const predictedDigitDisplay = document.getElementById('predicted-digit');
+    const loadingMessage = document.getElementById('loading-message');
+
+    // --- キャンバスの初期設定（黒背景） ---
+    function initCanvas() {
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // 線の設定
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 20;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+    }
+
+    // --- 結果表示UIの構築 ---
+    function buildResultsUI() {
+        for (let i = 0; i <= 9; i++) {
+            const row = document.createElement('div');
+            row.className = 'flex items-center mb-2';
+            
+            const label = document.createElement('div');
+            label.className = 'w-6 font-bold text-lg text-right mr-2';
+            label.innerText = i;
+            
+            const barWrap = document.createElement('div');
+            barWrap.className = 'bar-container flex-grow';
+            
+            const barFill = document.createElement('div');
+            barFill.className = 'bar-fill';
+            barFill.id = `bar-${i}`;
+            
+            const probText = document.createElement('div');
+            probText.className = 'w-12 text-xs text-right ml-2 font-mono';
+            probText.id = `prob-${i}`;
+            probText.innerText = '0.0%';
+
+            barWrap.appendChild(barFill);
+            row.appendChild(label);
+            row.appendChild(barWrap);
+            row.appendChild(probText);
+            resultsPanel.appendChild(row);
+        }
+    }
+
+    // --- ONNXモデルの読み込み ---
+    async function loadModel() {
+        try {
+            // 注意: GitHub Pagesにデプロイする際、このパスに .onnx ファイルが存在する必要があります
+            session = await ort.InferenceSession.create('./mnist_cnn.onnx');
+            loadingMessage.classList.add('hidden');
+            console.log("Model loaded successfully.");
+        } catch (e) {
+            loadingMessage.className = "text-center py-4 text-red-600 font-bold mb-4 bg-red-50 rounded";
+            loadingMessage.innerText = "エラー: モデルの読み込みに失敗しました。'mnist_cnn.onnx' が正しい場所にありますか？";
+            console.error(e);
+        }
+    }
+
+    // --- 推論処理 ---
+    async function predict() {
+        if (!session) return;
+
+        // 1. 画像のダウンサンプリング (280x280 -> 28x28)
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = 28;
+        offscreenCanvas.height = 28;
+        const offscreenCtx = offscreenCanvas.getContext('2d');
+        
+        // 描画されたキャンバスを28x28サイズに縮小して描画
+        offscreenCtx.drawImage(canvas, 0, 0, 28, 28);
+        const imgData = offscreenCtx.getImageData(0, 0, 28, 28).data;
+
+        // 2. テンソルデータの準備 (1x1x28x28 の Float32Array)
+        const inputBuffer = new Float32Array(28 * 28);
+        
+        for (let i = 0; i < 28 * 28; i++) {
+            // キャンバスは白黒（RGB値が全て同じ）なので、R要素(0, 4, 8...)だけを見る
+            const pixelValue = imgData[i * 4]; 
+            
+            // PyTorch側で行っていた transforms.Normalize((0.1307,), (0.3081,)) の適用
+            const normalizedValue = (pixelValue / 255.0 - 0.1307) / 0.3081;
+            inputBuffer[i] = normalizedValue;
+        }
+
+        // 3. ONNX Runtime用テンソルの作成
+        // PythonのモデルはCNNなので、形状は [バッチサイズ, チャンネル, 高さ, 幅]
+        const tensor = new ort.Tensor('float32', inputBuffer, [1, 1, 28, 28]);
+
+        // 4. 推論の実行 ('input'はPython側の input_names と一致させる)
+        const feeds = { input: tensor };
+        const results = await session.run(feeds);
+        
+        // 'output'はPython側の output_names と一致
+        const logits = results.output.data; 
+
+        // 5. ロジット（生の出力値）をSoftmax関数で確率(0.0 ~ 1.0)に変換
+        const probabilities = softmax(logits);
+        
+        // 6. UIの更新
+        updateResultsUI(probabilities);
+    }
+
+    // ソフトマックス関数
+    function softmax(arr) {
+        const maxLogit = Math.max(...arr);
+        const scores = arr.map(l => Math.exp(l - maxLogit));
+        const sum = scores.reduce((a, b) => a + b);
+        return scores.map(s => s / sum);
+    }
+
+    function updateResultsUI(probabilities) {
+        let maxProb = -1;
+        let bestDigit = -1;
+
+        for (let i = 0; i <= 9; i++) {
+            const prob = probabilities[i];
+            const probPct = (prob * 100).toFixed(1);
+            
+            document.getElementById(`bar-${i}`).style.width = `${probPct}%`;
+            document.getElementById(`prob-${i}`).innerText = `${probPct}%`;
+
+            if (prob > maxProb) {
+                maxProb = prob;
+                bestDigit = i;
+            }
+        }
+        
+        predictedDigitDisplay.innerText = bestDigit;
+    }
+
+    // --- マウス・タッチイベントの処理 ---
+    function getEventPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+        return {
+            x: clientX - rect.left,
+            y: clientY - rect.top
+        };
+    }
+
+    function startDrawing(e) {
+        isDrawing = true;
+        const pos = getEventPos(e);
+        lastX = pos.x;
+        lastY = pos.y;
+    }
+
+    function draw(e) {
+        if (!isDrawing) return;
+        e.preventDefault(); // タッチスクロール防止
+        const pos = getEventPos(e);
+        
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        
+        lastX = pos.x;
+        lastY = pos.y;
+        
+        // 描画中にリアルタイムで推論を実行
+        predict();
+    }
+
+    function stopDrawing() {
+        isDrawing = false;
+        predict();
+    }
+
+    // イベントリスナーの登録
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseout', stopDrawing);
+    
+    // タッチデバイス対応
+    canvas.addEventListener('touchstart', startDrawing, {passive: false});
+    canvas.addEventListener('touchmove', draw, {passive: false});
+    canvas.addEventListener('touchend', stopDrawing);
+
+    clearBtn.addEventListener('click', () => {
+        initCanvas();
+        // UIのリセット
+        updateResultsUI(new Array(10).fill(0));
+        predictedDigitDisplay.innerText = '-';
+    });
+
+    // --- 初期化 ---
+    initCanvas();
+    buildResultsUI();
+    loadModel();
+
+</script>
+</body>
+</html>
