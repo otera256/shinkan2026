@@ -184,7 +184,9 @@
         
         for (let i = 0; i < 28 * 28; i++) {
             // キャンバスは白黒（RGB値が全て同じ）なので、R要素(0, 4, 8...)だけを見る
-            const pixelValue = imgData[i * 4]; 
+            let pixelValue = imgData[i * 4]; 
+            // 白黒の反転を行う（MNISTは背景が黒、線が白なので、キャンバスの値を反転させる）
+            pixelValue = 255 - pixelValue;
             
             // PyTorch側で行っていた transforms.Normalize((0.1307,), (0.3081,)) の適用
             const normalizedValue = (pixelValue / 255.0 - 0.1307) / 0.3081;
