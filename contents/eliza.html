@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ELIZA (チャッピー構文) - ルールベースAI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        body {
+            background-color: var(--color-math-bg);
+            color: var(--color-secondary);
+            font-family: sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container-box {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header-title {
+            color: var(--color-primary);
+            border-bottom: 2px solid var(--color-primary-light);
+            padding-bottom: 8px;
+            margin-bottom: 20px;
+        }
+
+        /* チャット画面のスタイル */
+        .chat-container {
+            background-color: #f3f4f6;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            height: 500px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-history {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .chat-bubble {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            word-break: break-word;
+            white-space: pre-wrap;
+        }
+
+        .bubble-user {
+            background-color: var(--color-primary);
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        .bubble-ai {
+            background-color: white;
+            color: var(--color-secondary);
+            border: 1px solid #e5e7eb;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        .chat-input-area {
+            display: flex;
+            padding: 12px;
+            background-color: white;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .chat-input:focus {
+            border-color: var(--color-primary);
+        }
+
+        .send-btn {
+            background-color: var(--color-primary);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 0 20px;
+            margin-left: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .send-btn:hover {
+            background-color: var(--color-primary-light);
+        }
+
+        /* ターミナル風デバッグ画面のスタイル */
+        .terminal-container {
+            background-color: #0c0c0c;
+            color: #39ff14; /* ネオングリーン */
+            font-family: 'Courier New', Courier, monospace;
+            border-radius: 8px;
+            height: 500px;
+            padding: 16px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+        }
+
+        .term-line {
+            margin-bottom: 6px;
+            word-break: break-all;
+        }
+
+        .term-tag {
+            color: #00e5ff; /* シアン */
+            font-weight: bold;
+        }
+
+        .term-match {
+            color: #ffff00; /* 黄色 */
+        }
+
+        .term-warning {
+            color: #ff3366; /* 赤ピンク */
+            font-weight: bold;
+            margin-top: 8px;
+        }
+        
+        .cursor-blink {
+            animation: blink 1s step-end infinite;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-box">
+    <div class="flex items-center justify-between border-b-2 border-[var(--color-primary-light)] pb-2 mb-6">
+        <h1 class="text-2xl font-bold text-[var(--color-primary)]">ルールベースAI (チャッピー構文シミュレータ)</h1>
+        <span class="bg-gray-700 text-yellow-300 text-xs font-bold px-3 py-1 rounded border border-yellow-300">ネタ・ジョーク教材</span>
+    </div>
+    
+    <p class="mb-6 text-sm leading-relaxed">
+        このAIは「意味」を全く理解していません。1960年代に発明された<strong>ELIZA（イライザ）</strong>と同じ仕組みで、<br>
+        入力された文字を<strong>正規表現（Regex）</strong>で強引に切り抜き、用意された「ChatGPTっぽいテンプレート」に当てはめているだけです。<br>
+        左側のチャットで話しかけながら、右側のデバッグ画面で「AIの知性の正体（ただの条件分岐）」を観察してみてください。
+    </p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <!-- 左側：チャット画面 -->
+        <div class="flex flex-col">
+            <h2 class="text-lg font-semibold mb-2">ユーザーインターフェース (UI)</h2>
+            <div class="chat-container">
+                <div class="chat-history" id="chat-history">
+                    <!-- 初期メッセージ -->
+                    <div class="chat-bubble bubble-ai">
+                        こんにちは！私はAIアシスタントです。コーディングのサポートから文章の要約まで、何でもお手伝いする準備ができています。本日はどのようなご用件でしょうか？
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="chat-input" class="chat-input" placeholder="例: 最近、レポートが多くて疲れました" autocomplete="off">
+                    <button id="send-btn" class="send-btn">送信</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右側：デバッグ画面 -->
+        <div class="flex flex-col">
+            <h2 class="text-lg font-semibold mb-2">内部思考プロセス (デバッグコンソール)</h2>
+            <div class="terminal-container" id="terminal-container">
+                <div class="term-line">System Initialization Complete...</div>
+                <div class="term-line">Loading Regex Patterns: OK (5 rules loaded)</div>
+                <div class="term-line">Waiting for user input...<span class="cursor-blink">_</span></div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="mt-8 text-right border-t pt-4 border-gray-100">
+        <a href="../index.html" class="text-sm text-[var(--color-primary)] hover:underline">トップへ戻る</a>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // ルールベース (ELIZA / チャッピー構文)
+    // ==========================================
+    
+    const rules = [
+        {
+            id: "Rule_01_Emotion",
+            name: "感情・主観を尋ねるパターン",
+            pattern: /(.*)(どう思う|好き|嫌い|感情|気持ち)(.*)/,
+            templates: [
+                "私はAIであるため、個人的な感情や「{1}」に対する主観的な意見は持っていません。しかし、一般的な観点から以下の3つのアプローチで客観的な事実を提供することは可能です。",
+                "大規模言語モデルとして、私には「{2}」という概念がありません。ですが、その質問は非常に興味深い視点ですね。"
+            ]
+        },
+        {
+            id: "Rule_02_Empathy",
+            name: "悩みや疲労の吐露",
+            pattern: /(.*)(疲れ|しんど|難し|悩ん|限界)(.*)/,
+            templates: [
+                "「{1}」が{2}と感じていらっしゃるとのこと、お察しいたします。解決策として以下の3つのステップをお試しいただくことをお勧めします。\n1. 深呼吸をする\n2. タスクを細分化する\n3. 専門家に相談する\nご参考になれば幸いです。",
+                "「{1}」の件でお悩みですね。それは非常に重要な問題です。ただし、私は医療や心理の専門家ではないため、具体的なアドバイスは控えさせていただきます。他にもお手伝いできることはありますか？"
+            ]
+        },
+        {
+            id: "Rule_03_Greeting",
+            name: "挨拶・漠然とした入力",
+            pattern: /(.*)(こんにちは|よろしく|やあ|はじめまして)(.*)/,
+            templates: [
+                "こんにちは！私はAIアシスタントです。コーディングのサポートから文章の要約まで、何でもお手伝いする準備ができています。本日はどのようなご用件でしょうか？"
+            ]
+        },
+        {
+            id: "Rule_04_Programming",
+            name: "プログラミング関連",
+            pattern: /(.*)(エラー|バグ|動かない|コード|実装)(.*)/,
+            templates: [
+                "承知いたしました。「{1}」の「{2}」に関するトラブルシューティングですね。一般的な原因として以下の可能性が考えられます。\n・依存関係の競合\n・構文エラー\n・キャッシュの問題\n詳細なログを提供していただければ、さらに正確な回答が可能です。"
+            ]
+        },
+        {
+            id: "Rule_05_Fallback",
+            name: "汎用フォールバック (すべてにマッチ)",
+            pattern: /(.*)/,
+            templates: [
+                "「{1}」についてですね。素晴らしいご質問です。このトピックについては様々な議論がありますが、結論から言うとケースバイケースです。さらに詳しく掘り下げますか？",
+                "申し訳ありませんが、倫理的なガイドラインにより「{1}」に関する具体的な手順を生成することはできません。安全で建設的な代替案をご提案しましょうか？"
+            ]
+        }
+    ];
+
+    // ==========================================
+    // UI制御
+    // ==========================================
+    
+    const chatInput = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+    const chatHistory = document.getElementById('chat-history');
+    const terminal = document.getElementById('terminal-container');
+
+    // チャットにメッセージを追加
+    function appendChat(text, isUser) {
+        const bubble = document.createElement('div');
+        bubble.className = `chat-bubble ${isUser ? 'bubble-user' : 'bubble-ai'}`;
+        bubble.innerText = text;
+        chatHistory.appendChild(bubble);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    // ターミナルにログを追加
+    function appendLog(html) {
+        // カーソルを削除
+        const cursor = terminal.querySelector('.cursor-blink');
+        if (cursor) cursor.remove();
+
+        const line = document.createElement('div');
+        line.className = 'term-line';
+        line.innerHTML = html;
+        terminal.appendChild(line);
+
+        // 新しいカーソルを追加
+        const newCursor = document.createElement('span');
+        newCursor.className = 'cursor-blink';
+        newCursor.innerText = '_';
+        terminal.appendChild(newCursor);
+
+        terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    // パターンマッチと応答生成
+    function processInput(input) {
+        appendLog(`<br>> User Input Received: "${input}"`);
+        appendLog(`⚡ 思考プロセス(正規表現マッチング)実行中...`);
+
+        // 入力を少しきれいにする
+        const cleanInput = input.trim();
+
+        for (const rule of rules) {
+            const match = cleanInput.match(rule.pattern);
+            
+            if (match) {
+                // デバッグ出力
+                appendLog(`<span class="term-tag">[ルール検知]</span>: <span class="term-match">${rule.pattern.toString()}</span> (${rule.name})`);
+                
+                let logVars = `<span class="term-tag">[変数抽出]</span>: `;
+                const vars = [];
+                // match[0] は全体なので、match[1] 以降を取得
+                for (let i = 1; i < match.length; i++) {
+                    vars.push(`{${i}} = "${match[i]}"`);
+                }
+                appendLog(logVars + vars.join(', '));
+
+                // テンプレートのランダム選択
+                const templateIdx = Math.floor(Math.random() * rule.templates.length);
+                let response = rule.templates[templateIdx];
+                
+                appendLog(`<span class="term-tag">[適用テンプレート]</span>: ID = ${rule.id} [${templateIdx}]`);
+
+                // プレースホルダーの置換 (e.g., {1} -> match[1])
+                for (let i = 1; i < match.length; i++) {
+                    const regex = new RegExp(`\\{${i}\\}`, 'g');
+                    response = response.replace(regex, match[i]);
+                }
+
+                appendLog(`<span class="term-warning">[状態]: ※AIは意味を全く理解していません。ただ文字列を結合しただけです。</span>`);
+                
+                // 擬似的なタイピングディレイを入れてから返答
+                setTimeout(() => {
+                    appendChat(response, false);
+                }, 600);
+                
+                return; // 最初のマッチで終了
+            }
+        }
+    }
+
+    // 送信イベントの処理
+    function handleSend() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+
+        appendChat(text, true);
+        chatInput.value = '';
+        
+        processInput(text);
+    }
+
+    sendBtn.addEventListener('click', handleSend);
+    chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            handleSend();
+        }
+    });
+
+</script>
+</body>
+</html>
