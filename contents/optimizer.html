@@ -358,8 +358,8 @@
                 const x = toWorldX(px, funcDef.domain);
                 const y = toWorldY(py, funcDef.domain);
                 const z = funcDef.f(x, y);
-                // 対数スケールで見やすく（負の値は0にクランプ）
-                const logZ = Math.log(Math.max(z, 0) + 1e-5);
+                // 対数スケールで見やすく（最小値が極端に負に引っ張られないよう 1e-5 ではなく +1.0 を使用）
+                const logZ = Math.log(Math.max(z, 0) + 1.0);
                 zs[py * WIDTH + px] = logZ;
                 if (logZ < minZ) minZ = logZ;
                 if (logZ > maxZ) maxZ = logZ;
@@ -370,8 +370,12 @@
         for (let i = 0; i < zs.length; i++) {
             let norm = (zs[i] - minZ) / (maxZ - minZ + 1e-10);
             
-            // 階調化 (15段階)
-            const levels = 15;
+            // さらに値が低い部分をより見やすくするために対数的な補正（ガンマ補正）をかける
+            // （画面全体が赤くなるのを防ぎ、青〜黄色の領域をより広げる）
+            norm = Math.pow(norm, 1.2);
+            
+            // 階調化 (倍にする：15 -> 30)
+            const levels = 30;
             norm = Math.floor(norm * levels) / levels; 
             
             let r, g, b;
