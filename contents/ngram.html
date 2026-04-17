@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N-gram 言語モデル シミュレーター</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        body {
+            background-color: var(--color-math-bg);
+            color: var(--color-secondary);
+            font-family: sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container-box {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header-title {
+            color: var(--color-primary);
+            border-bottom: 2px solid var(--color-primary-light);
+            padding-bottom: 8px;
+            margin-bottom: 20px;
+        }
+
+        .control-panel {
+            background-color: var(--color-thm-bg);
+            padding: 16px;
+            border-radius: 8px;
+        }
+
+        .generate-area {
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px;
+            min-height: 250px;
+            font-size: 1.1rem;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .new-word-highlight {
+            background-color: #fef08a; /* 黄色 */
+            font-weight: bold;
+            transition: background-color 1s ease;
+        }
+
+        /* 確率分布バーグラフ */
+        .prob-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .prob-word {
+            width: 80px;
+            font-weight: bold;
+            text-align: right;
+            margin-right: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .prob-bar-container {
+            flex: 1;
+            background-color: #e5e7eb;
+            border-radius: 4px;
+            height: 16px;
+            overflow: hidden;
+            position: relative;
+        }
+        .prob-bar {
+            height: 100%;
+            background-color: var(--color-primary);
+            transition: width 0.3s;
+        }
+        .prob-bar.overfit {
+            background-color: #ef4444; /* 赤 (過学習) */
+        }
+        .prob-value {
+            width: 50px;
+            text-align: right;
+            font-size: 0.85rem;
+            margin-left: 8px;
+            font-family: monospace;
+        }
+
+        .context-chip {
+            display: inline-block;
+            background-color: var(--color-secondary);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            margin-right: 4px;
+            margin-bottom: 4px;
+        }
+
+        input[type="range"] {
+            accent-color: var(--color-primary);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-box">
+    <h1 class="header-title text-2xl font-bold">マルコフ連鎖で「っぽさ」を作る (N-gram言語モデル)</h1>
+    <p class="mb-6 text-sm leading-relaxed">
+        現代のAI（LLM）の原点である「<strong>直前の単語から、次に来る確率が高い単語を予測する</strong>」という仕組みを体験できます。<br>
+        Nの値（予測の手がかりにする単語数）を変更すると、生成される文章がどう変わるかに注目してください。<br>
+        Nが小さすぎると意味不明に（汎化）、Nが大きすぎると元の文章の完全なコピー（過学習・丸暗記）になってしまいます。
+    </p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        <!-- 左側：設定と生成 -->
+        <div class="flex flex-col">
+            <div class="control-panel mb-4">
+                <div class="mb-4">
+                    <label class="block text-sm font-bold mb-1">学習データ (コーパス)</label>
+                    <select id="corpus-select" class="w-full border border-gray-300 rounded px-3 py-2 bg-white">
+                        <option value="soseki">夏目漱石「吾輩は猫である」</option>
+                        <option value="dazai">太宰治「人間失格」</option>
+                    </select>
+                </div>
+                
+                <div class="mb-4">
+                    <div class="flex justify-between items-end mb-1">
+                        <label class="text-sm font-bold">N-gramのサイズ (N)</label>
+                        <span id="n-val-display" class="font-mono font-bold text-[var(--color-primary)]">3</span>
+                    </div>
+                    <input type="range" id="n-slider" min="1" max="5" value="3" class="w-full">
+                    <div class="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>1 (ランダム)</span>
+                        <span>3 (標準)</span>
+                        <span>5 (丸暗記/過学習)</span>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 mt-6">
+                    <button id="btn-step" class="flex-1 bg-[var(--color-primary)] text-white font-bold py-2 px-4 rounded hover:bg-[var(--color-primary-light)] transition">
+                        1単語だけ生成
+                    </button>
+                    <button id="btn-auto" class="flex-1 border-2 border-[var(--color-primary)] text-[var(--color-primary)] font-bold py-2 px-4 rounded hover:bg-blue-50 transition">
+                        自動生成 (開始)
+                    </button>
+                </div>
+                <div class="text-right mt-2">
+                    <button id="btn-clear" class="text-sm text-gray-500 hover:text-gray-800 underline">テキストをクリア</button>
+                </div>
+            </div>
+
+            <h2 class="text-lg font-semibold mb-2">生成された文章</h2>
+            <div id="generate-area" class="generate-area"></div>
+        </div>
+
+        <!-- 右側：内部状態（確率分布） -->
+        <div class="flex flex-col">
+            <div class="bg-gray-800 text-white rounded-lg p-5 flex-1 shadow-inner">
+                <h2 class="text-lg font-bold mb-4 border-b border-gray-600 pb-2 text-[var(--color-primary-light)]">AIの脳内 (確率分布)</h2>
+                
+                <div class="mb-6">
+                    <div class="text-sm text-gray-400 mb-1">現在の文脈 (直前の <span id="ctx-n-display">2</span> 単語):</div>
+                    <div id="context-display" class="min-h-[32px]">
+                        <span class="text-gray-500 italic">（まだありません）</span>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="text-sm text-gray-400 mb-2">次に来る単語の候補と確率:</div>
+                    <div id="prob-chart" class="bg-gray-900 rounded p-4 min-h-[150px]">
+                        <!-- 棒グラフがここに動的に生成されます -->
+                        <div class="text-gray-500 text-center text-sm mt-4">単語を生成すると確率分布が表示されます</div>
+                    </div>
+                    <div id="overfit-warning" class="mt-3 text-red-400 text-sm font-bold hidden flex items-center gap-2">
+                        <span>⚠️</span> 候補が1つしかありません（確率100%）。学習データを丸暗記（過学習）している状態です。
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="mt-8 text-right border-t pt-4 border-gray-100">
+        <a href="../index.html" class="text-sm text-[var(--color-primary)] hover:underline">トップへ戻る</a>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // データ定義
+    // ==========================================
+    const corpusTexts = {
+        soseki: `吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。何でも薄暗いじめじめした所でニャーニャー泣いていた事だけは記憶している。吾輩はここで始めて人間というものを見た。しかもあとで聞くとそれは書生という人間中で一番獰悪な種族であったそうだ。この書生というのは時々我々を捕えて煮て食うという話である。しかしその当時は何という考もなかったから別段恐しいとも思わなかった。ただ彼の掌に載せられてスーと持ち上げられた時何だかフワフワした感じがあったばかりである。掌の上で少し落ちついて書生の顔を見たのがいわゆる人間というものの見始であろう。この時妙なものだと思った感じが今でも残っている。第一毛をもって装飾されべきはずの顔がツルツルしてまるで薬缶だ。その後猫にもだいぶ逢ったがこんな片輪には一度も出会わした事がない。のみならず顔の真中があまりに突起している。そうしてその穴の中から時々ぷうぷうと煙を吹く。どうも咽せぽくて実に弱った。これが人間の飲む煙草というものである事はようやくこの頃知った。`,
+        dazai: `恥の多い生涯を送って来ました。自分には、人間の生活というものが、見当つかないのです。自分は東北の田舎に生れましたので、汽車をはじめて見たのは、よほど大きくなってからでした。自分は停車場のブリッジを、上って、降りて、そうしてそれが線路をまたぎ越えるために造られたものだという事には全然気づかず、ただそれは停車場の構内を外国の遊戯場みたいに、複雑に楽しく、ハイカラにするためにのみ、設備せられてあるものだとばかり思っていました。しかもかなり長い間そう思っていたのです。ブリッジの上って、降りては、自分にとってむしろ、ずいぶん垢抜けた遊戯で、それは鉄道のサーヴィスの中でも、最も気のきいたサーヴィスの一つだと思っていたのですが、のちにそれはただ旅客が線路をまたぎ越えるための、はなはだ実利的な階段に過ぎないのを発見して、にわかに興覚めしました。`
+    };
+
+    // ==========================================
+    // モデルの状態
+    // ==========================================
+    let currentTokens = [];
+    let nGramModel = {};
+    let N = 3;
+    let contextHistory = []; // 生成された直近の単語リスト
+    let autoInterval = null;
+
+    // UI要素
+    const corpusSelect = document.getElementById('corpus-select');
+    const nSlider = document.getElementById('n-slider');
+    const nValDisplay = document.getElementById('n-val-display');
+    const btnStep = document.getElementById('btn-step');
+    const btnAuto = document.getElementById('btn-auto');
+    const btnClear = document.getElementById('btn-clear');
+    const generateArea = document.getElementById('generate-area');
+    
+    const contextDisplay = document.getElementById('context-display');
+    const probChart = document.getElementById('prob-chart');
+    const overfitWarning = document.getElementById('overfit-warning');
+    const ctxNDisplay = document.getElementById('ctx-n-display');
+
+    // ==========================================
+    // コアロジック
+    // ==========================================
+
+    // テキストを形態素（単語）に分割する (Intl.Segmenterを使用)
+    function tokenize(text) {
+        if (!window.Intl || !Intl.Segmenter) {
+            alert("お使いのブラウザはIntl.Segmenterをサポートしていません。最新のブラウザをご利用ください。");
+            return text.split(''); // フォールバックとして文字単位
+        }
+        const segmenter = new Intl.Segmenter('ja', { granularity: 'word' });
+        const segments = Array.from(segmenter.segment(text));
+        // 空白文字のみのトークンは除外
+        return segments.map(s => s.segment).filter(s => s.trim().length > 0 || s === '\n');
+    }
+
+    // N-gramモデルの構築
+    function buildModel() {
+        nGramModel = {};
+        for (let i = 0; i <= currentTokens.length - N; i++) {
+            // N-1個の文脈を取得（キーとして結合。後で復元できるよう '|||' で区切る）
+            const context = currentTokens.slice(i, i + N - 1).join('|||');
+            const nextWord = currentTokens[i + N - 1];
+            
+            if (!nGramModel[context]) nGramModel[context] = {};
+            if (!nGramModel[context][nextWord]) nGramModel[context][nextWord] = 0;
+            nGramModel[context][nextWord]++;
+        }
+    }
+
+    // データセットまたはNが変更された時の初期化
+    function init() {
+        N = parseInt(nSlider.value);
+        nValDisplay.innerText = N;
+        ctxNDisplay.innerText = N - 1;
+        
+        const text = corpusTexts[corpusSelect.value];
+        currentTokens = tokenize(text);
+        buildModel();
+        
+        // 状態リセット
+        contextHistory = [];
+        generateArea.innerHTML = '';
+        updateUI(null, {});
+    }
+
+    // 次の単語を生成
+    function generateNextWord() {
+        // 現在の文脈（直近のN-1単語）を取得
+        let ctxKey = '';
+        if (N > 1) {
+            // 履歴が足りない場合は後ろから可能な限り取得
+            const startIdx = Math.max(0, contextHistory.length - (N - 1));
+            ctxKey = contextHistory.slice(startIdx).join('|||');
+        }
+
+        // 未知の文脈（またはN=1で履歴なし）の場合、モデル内に存在するランダムな文脈を拾う
+        if (!nGramModel[ctxKey]) {
+            const allContexts = Object.keys(nGramModel);
+            // 確率分布に忠実にするため、本来は頻度考慮が良いが、ここでは単純にランダム
+            ctxKey = allContexts[Math.floor(Math.random() * allContexts.length)];
+            
+            // UI表示用に文脈をリセット（元のトークン配列に復元してセット）
+            if (N > 1 && ctxKey !== '') {
+                contextHistory = ctxKey.split('|||');
+            }
+        }
+
+        const choices = nGramModel[ctxKey];
+        if (!choices) return; // エラーフェールセーフ
+
+        // 確率計算用
+        let totalCount = 0;
+        for (const w in choices) totalCount += choices[w];
+
+        // 確率に従ってルーレット選択
+        let r = Math.random() * totalCount;
+        let selectedWord = "";
+        for (const w in choices) {
+            r -= choices[w];
+            if (r <= 0) {
+                selectedWord = w;
+                break;
+            }
+        }
+
+        // 履歴の更新
+        contextHistory.push(selectedWord);
+        // 最大100単語くらいで画面表示を制限するかはお好み
+        
+        // テキスト表示の更新
+        appendWordToUI(selectedWord);
+        
+        // 確率分布UIの更新（選択された結果ではなく、選択する「前」の分布を見せる）
+        updateUI(ctxKey, choices, totalCount, selectedWord);
+    }
+
+    // ==========================================
+    // UI制御関数
+    // ==========================================
+
+    function appendWordToUI(word) {
+        const span = document.createElement('span');
+        span.innerText = word;
+        span.className = 'new-word-highlight';
+        generateArea.appendChild(span);
+
+        // スクロールを一番下に
+        generateArea.scrollTop = generateArea.scrollHeight;
+
+        // ハイライトを消すアニメーション
+        setTimeout(() => {
+            span.classList.remove('new-word-highlight');
+        }, 800);
+    }
+
+    function updateUI(ctxKey, choices, totalCount, selectedWord) {
+        // 文脈の表示
+        contextDisplay.innerHTML = '';
+        if (!ctxKey || ctxKey === '') {
+            contextDisplay.innerHTML = '<span class="text-gray-500 italic">（文脈なし / 完全にランダム）</span>';
+        } else {
+            // ctxKeyを分割してチップ化
+            const tokens = ctxKey.split('|||');
+            tokens.forEach(t => {
+                const chip = document.createElement('span');
+                chip.className = 'context-chip';
+                chip.innerText = t;
+                contextDisplay.appendChild(chip);
+            });
+        }
+
+        // グラフの描画
+        probChart.innerHTML = '';
+        const sortedChoices = Object.entries(choices).sort((a, b) => b[1] - a[1]);
+        
+        let isOverfit = false;
+        if (sortedChoices.length === 1 && totalCount > 0) {
+            isOverfit = true;
+        }
+
+        sortedChoices.forEach(([word, count]) => {
+            const prob = (count / totalCount) * 100;
+            const isSelected = (word === selectedWord);
+
+            const row = document.createElement('div');
+            row.className = 'prob-row';
+            
+            // 選択された単語はハイライト
+            const wordDiv = document.createElement('div');
+            wordDiv.className = `prob-word ${isSelected ? 'text-[var(--color-primary-light)]' : 'text-gray-300'}`;
+            // 改行が見えないように置換
+            wordDiv.innerText = word === '\n' ? '↵(改行)' : word;
+            
+            const barContainer = document.createElement('div');
+            barContainer.className = 'prob-bar-container';
+            
+            const bar = document.createElement('div');
+            bar.className = `prob-bar ${isOverfit ? 'overfit' : ''}`;
+            bar.style.width = `${prob}%`;
+            
+            const valDiv = document.createElement('div');
+            valDiv.className = 'prob-value text-gray-400';
+            valDiv.innerText = `${prob.toFixed(1)}%`;
+
+            barContainer.appendChild(bar);
+            row.appendChild(wordDiv);
+            row.appendChild(barContainer);
+            row.appendChild(valDiv);
+            probChart.appendChild(row);
+        });
+
+        if (Object.keys(choices).length === 0) {
+            probChart.innerHTML = '<div class="text-gray-500 text-center text-sm mt-4">単語を生成すると確率分布が表示されます</div>';
+        }
+
+        // 過学習の警告
+        if (isOverfit && N > 1) {
+            overfitWarning.classList.remove('hidden');
+        } else {
+            overfitWarning.classList.add('hidden');
+        }
+    }
+
+    // ==========================================
+    // イベントリスナー
+    // ==========================================
+
+    corpusSelect.addEventListener('change', init);
+    
+    nSlider.addEventListener('input', () => {
+        nValDisplay.innerText = nSlider.value;
+    });
+    nSlider.addEventListener('change', init); // 確定時に再構築
+
+    btnStep.addEventListener('click', generateNextWord);
+
+    btnAuto.addEventListener('click', () => {
+        if (autoInterval) {
+            // 停止
+            clearInterval(autoInterval);
+            autoInterval = null;
+            btnAuto.innerText = "自動生成 (開始)";
+            btnAuto.classList.remove('bg-blue-100');
+        } else {
+            // 開始
+            autoInterval = setInterval(generateNextWord, 250); // 250ms間隔
+            btnAuto.innerText = "自動生成 (停止)";
+            btnAuto.classList.add('bg-blue-100');
+        }
+    });
+
+    btnClear.addEventListener('click', () => {
+        generateArea.innerHTML = '';
+        contextHistory = [];
+        updateUI(null, {});
+    });
+
+    // 初回実行
+    init();
+
+</script>
+</body>
+</html>
